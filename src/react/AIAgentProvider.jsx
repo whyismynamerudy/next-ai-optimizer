@@ -1,4 +1,4 @@
-// AIAgentProvider.jsx
+'use client';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
 // Create a context for AI agent information
