@@ -1,30 +1,12 @@
 // babel-plugin-nextjs-ai-optimizer.js
 const { declare } = require('@babel/helper-plugin-utils');
 const { types: t } = require('@babel/core');
-const OpenAI = require('openai');
-
-// Initialize OpenAI client
-let openai;
-let useAI = false;
-
-// Set up global component registry
-if (typeof global !== 'undefined' && !global.__NEXT_AI_COMPONENT_REGISTRY__) {
-  global.__NEXT_AI_COMPONENT_REGISTRY__ = [];
-}
 
 /**
  * Babel plugin to enhance React components for better AI agent interaction
  */
 module.exports = declare((api, options = {}) => {
   api.assertVersion(7);
-  
-  // Configure OpenAI if API key is provided
-  if (options.openaiApiKey) {
-    openai = new OpenAI({
-      apiKey: options.openaiApiKey
-    });
-    useAI = true;
-  }
 
   return {
     name: 'nextjs-ai-optimizer',
@@ -71,29 +53,6 @@ module.exports = declare((api, options = {}) => {
           processComponent(path, state);
         }
       },
-      
-      /**
-       * Process component exports to register them
-       */
-      ExportDefaultDeclaration(path, state) {
-        // Record exported components for documentation
-        const declaration = path.node.declaration;
-        let componentName;
-        
-        if (t.isIdentifier(declaration)) {
-          componentName = declaration.name;
-        } else if (
-          (t.isFunctionDeclaration(declaration) || t.isClassDeclaration(declaration)) && 
-          declaration.id
-        ) {
-          componentName = declaration.id.name;
-        }
-        
-        if (componentName) {
-          const filename = state.filename || 'unknown';
-          addToComponentRegistry(componentName, filename, state);
-        }
-      }
     }
   };
 });
@@ -125,7 +84,7 @@ function isReactComponent(path) {
 /**
  * Process a React component
  */
-async function processComponent(path, state) {
+function processComponent(path, state) {
   const componentName = path.node.id?.name;
   if (!componentName) return;
   
@@ -136,15 +95,6 @@ async function processComponent(path, state) {
     description: extractComponentDescription(path),
     filename: state.filename
   };
-  
-  // Use LLM to enhance understanding if enabled
-  if (useAI) {
-    try {
-      await enrichComponentWithAI(componentInfo, state);
-    } catch (error) {
-      console.warn(`AI enrichment failed for ${componentName}: ${error.message}`);
-    }
-  }
   
   // Store component info in state for later use
   if (!state.file.metadata.aiComponents) {
@@ -233,7 +183,7 @@ function enrichElementWithAttributes(path, state) {
     aiTarget = key;
   } else {
     // Generate based on element type and context
-    const parentComponent = state.file.metadata.currentComponent || 'unknown';
+    const parentComponent = state.file.metadata?.aiComponents?.[0]?.name || 'unknown';
     aiTarget = `${parentComponent}-${elementName}-${generateShortHash()}`;
   }
   
@@ -268,9 +218,7 @@ function addInteractionAttributes(openingElement, elementName) {
   switch (elementName.toLowerCase()) {
     case 'button':
     case 'a':
-      if (!hasAttribute(openingElement, 'aria-label')) {
-        // Try to extract purpose from children or onClick handler
-        // For simplicity, we're adding a generic attribute here
+      if (!hasAttribute(openingElement, 'data-ai-action')) {
         openingElement.attributes.push(
           t.jsxAttribute(
             t.jsxIdentifier('data-ai-action'),
@@ -284,21 +232,63 @@ function addInteractionAttributes(openingElement, elementName) {
       const typeAttr = getAttribute(openingElement, 'type');
       const inputType = typeAttr?.value?.value || 'text';
       
-      openingElement.attributes.push(
-        t.jsxAttribute(
-          t.jsxIdentifier('data-ai-input-type'),
-          t.stringLiteral(inputType)
-        )
-      );
+      if (!hasAttribute(openingElement, 'data-ai-input-type')) {
+        openingElement.attributes.push(
+          t.jsxAttribute(
+            t.jsxIdentifier('data-ai-input-type'),
+            t.stringLiteral(inputType)
+          )
+        );
+      }
+      
+      // Determine correct action type based on input type
+      let actionType = 'input';
+      if (inputType === 'button' || inputType === 'submit' || inputType === 'reset' || 
+          inputType === 'checkbox' || inputType === 'radio') {
+        actionType = 'click';
+      }
+      
+      if (!hasAttribute(openingElement, 'data-ai-action')) {
+        openingElement.attributes.push(
+          t.jsxAttribute(
+            t.jsxIdentifier('data-ai-action'),
+            t.stringLiteral(actionType)
+          )
+        );
+      }
       break;
       
     case 'form':
-      openingElement.attributes.push(
-        t.jsxAttribute(
-          t.jsxIdentifier('data-ai-interaction'),
-          t.stringLiteral('form-submission')
-        )
-      );
+      if (!hasAttribute(openingElement, 'data-ai-interaction')) {
+        openingElement.attributes.push(
+          t.jsxAttribute(
+            t.jsxIdentifier('data-ai-interaction'),
+            t.stringLiteral('form-submission')
+          )
+        );
+      }
+      break;
+      
+    case 'select':
+      if (!hasAttribute(openingElement, 'data-ai-action')) {
+        openingElement.attributes.push(
+          t.jsxAttribute(
+            t.jsxIdentifier('data-ai-action'),
+            t.stringLiteral('select')
+          )
+        );
+      }
+      break;
+      
+    case 'textarea':
+      if (!hasAttribute(openingElement, 'data-ai-action')) {
+        openingElement.attributes.push(
+          t.jsxAttribute(
+            t.jsxIdentifier('data-ai-action'),
+            t.stringLiteral('input')
+          )
+        );
+      }
       break;
   }
 }
@@ -328,72 +318,4 @@ function getAttribute(openingElement, name) {
  */
 function generateShortHash() {
   return Math.random().toString(36).substring(2, 8);
-}
-
-/**
- * Add component to registry
- */
-function addToComponentRegistry(componentName, filename, state) {
-  // Add to file metadata (local to the babel transformation)
-  if (!state.file.metadata.componentRegistry) {
-    state.file.metadata.componentRegistry = [];
-  }
-  
-  state.file.metadata.componentRegistry.push({
-    name: componentName,
-    file: filename
-  });
-  
-  // Also add to global registry for the webpack plugin to access
-  if (typeof global !== 'undefined' && global.__NEXT_AI_COMPONENT_REGISTRY__) {
-    global.__NEXT_AI_COMPONENT_REGISTRY__.push({
-      name: componentName,
-      file: filename,
-      exportedAt: new Date().toISOString()
-    });
-  }
-}
-
-/**
- * Enrich component information using LLM API
- */
-async function enrichComponentWithAI(componentInfo, state) {
-  if (!openai) return;
-  
-  try {
-    // Prepare component code for analysis
-    const componentCode = state.file.code.substring(
-      componentInfo.node?.start || 0,
-      componentInfo.node?.end || state.file.code.length
-    );
-    
-    const prompt = `
-      Analyze this React component:
-      
-      ${componentCode}
-      
-      Provide the following information in JSON format:
-      1. A concise description of what this component does
-      2. The key interactive elements within this component
-      3. Suggested data-ai-target values for each interactive element
-      4. Any expected interaction patterns (click, input, form submission, etc.)
-    `;
-    
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        { role: "system", content: "You are a React component analyzer helping to make components more accessible to AI agents." },
-        { role: "user", content: prompt }
-      ],
-      response_format: { type: "json_object" }
-    });
-    
-    const analysis = JSON.parse(response.choices[0].message.content);
-    
-    // Store AI analysis in component info
-    componentInfo.aiAnalysis = analysis;
-    
-  } catch (error) {
-    console.error(`Error enriching component with AI: ${error.message}`);
-  }
 }

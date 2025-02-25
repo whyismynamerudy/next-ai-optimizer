@@ -1,6 +1,5 @@
 // src/next/config.js
 const path = require('path');
-const fs = require('fs');
 
 /**
  * Helper function to create a Next.js config with AI optimization
@@ -28,7 +27,7 @@ function withAIOptimizer(nextConfig = {}) {
  * @param {Object} options - Next.js webpack options
  * @returns {Object} Enhanced webpack configuration
  */
-function enhanceWithAIOptimization(config, { isServer, dev }) {
+function enhanceWithAIOptimization(config, { dev }) {
   // Only apply in production builds or when specifically requested
   const shouldOptimize = !dev || process.env.OPTIMIZE_FOR_AI === 'true';
   
@@ -42,12 +41,8 @@ function enhanceWithAIOptimization(config, { isServer, dev }) {
       console.warn('[AI Optimizer] Could not find suitable babel rule in webpack config');
     }
     
-    // Add plugin to generate component map for AI agents
-    if (isServer) {
-      config.plugins.push(new AIComponentMapPlugin({
-        outputPath: './public/ai-component-map.json'
-      }));
-    }
+    // Add HTML metadata through webpack plugins
+    config.plugins.push(new EnhanceHTMLPlugin());
   }
   
   return config;
@@ -123,8 +118,6 @@ function addBabelPlugin(rule) {
       babelLoader.options.plugins.push([
         require.resolve('../babel/plugin'),
         {
-          openaiApiKey: process.env.OPENAI_API_KEY,
-          generateComponentMap: true,
           optimizationLevel: process.env.AI_OPTIMIZATION_LEVEL || 'standard'
         }
       ]);
@@ -143,8 +136,6 @@ function addBabelPlugin(rule) {
     rule.use.options.plugins.push([
       require.resolve('../babel/plugin'),
       {
-        openaiApiKey: process.env.OPENAI_API_KEY,
-        generateComponentMap: true,
         optimizationLevel: process.env.AI_OPTIMIZATION_LEVEL || 'standard'
       }
     ]);
@@ -152,86 +143,71 @@ function addBabelPlugin(rule) {
 }
 
 /**
- * Plugin to generate component map during build
+ * Webpack plugin to enhance HTML with AI metadata
  */
-class AIComponentMapPlugin {
-  constructor(options = {}) {
-    this.options = options;
-    this.outputPath = path.resolve(options.outputPath || './public/ai-component-map.json');
-  }
-  
+class EnhanceHTMLPlugin {
   apply(compiler) {
-    const pluginName = 'AIComponentMapPlugin';
-    
-    // Register component info during compilation
-    compiler.hooks.compilation.tap(pluginName, (compilation) => {
-      // This helps detect components in the current build
-      compilation.hooks.finishModules.tap(pluginName, (modules) => {
-        modules.forEach(module => {
-          if (module.buildInfo && module.buildInfo.aiComponents) {
-            if (!global.__NEXT_AI_COMPONENT_REGISTRY__) {
-              global.__NEXT_AI_COMPONENT_REGISTRY__ = [];
+    // This plugin will add the data-ai-optimized attribute to the HTML document
+    if (compiler.hooks && compiler.hooks.compilation) {
+      compiler.hooks.compilation.tap('EnhanceHTMLPlugin', (compilation) => {
+        // Check if HtmlWebpackPlugin is being used
+        if (compilation.hooks.htmlWebpackPluginAfterHtmlProcessing) {
+          compilation.hooks.htmlWebpackPluginAfterHtmlProcessing.tapAsync(
+            'EnhanceHTMLPlugin',
+            (data, callback) => {
+              // Add data-ai-optimized attribute to html tag
+              data.html = data.html.replace(
+                '<html',
+                '<html data-ai-optimized="true"'
+              );
+              
+              // Add AI helper script before closing body tag
+              const helperScript = `
+                <script>
+                  (function() {
+                    window.AIHelper = {
+                      findElement(targetOrDescription) {
+                        // Find by exact target
+                        let element = document.querySelector(\`[data-ai-target="\${targetOrDescription}"]\`);
+                        
+                        // If not found, try matching description
+                        if (!element) {
+                          element = document.querySelector(\`[data-ai-description*="\${targetOrDescription}"]\`);
+                        }
+                        
+                        return element;
+                      },
+                      
+                      getInteractiveElements() {
+                        return Array.from(document.querySelectorAll('[data-ai-action]')).map(el => ({
+                          target: el.getAttribute('data-ai-target'),
+                          action: el.getAttribute('data-ai-action'),
+                          description: el.getAttribute('data-ai-description'),
+                          text: el.textContent?.trim(),
+                          tagName: el.tagName.toLowerCase(),
+                          visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
+                          interactable: !el.disabled
+                        }));
+                      }
+                    };
+                  })();
+                </script>
+              `;
+              
+              data.html = data.html.replace(
+                '</body>',
+                `${helperScript}</body>`
+              );
+              
+              callback(null, data);
             }
-            
-            module.buildInfo.aiComponents.forEach(component => {
-              global.__NEXT_AI_COMPONENT_REGISTRY__.push({
-                name: component.name,
-                file: module.resource || 'unknown',
-                description: component.description || '',
-                props: component.props || []
-              });
-            });
-          }
-        });
-      });
-    });
-    
-    // Generate the component map file
-    compiler.hooks.done.tap(pluginName, (stats) => {
-      const componentRegistry = global.__NEXT_AI_COMPONENT_REGISTRY__ || [];
-      
-      // Check for existing component map and merge with new data
-      let existingMap = {};
-      try {
-        if (fs.existsSync(this.outputPath)) {
-          const existingData = fs.readFileSync(this.outputPath, 'utf8');
-          existingMap = JSON.parse(existingData);
+          );
         }
-      } catch (err) {
-        console.warn('[AI Optimizer] Could not read existing component map:', err.message);
-      }
-      
-      // Create updated component map
-      const componentMap = {
-        components: [
-          ...(existingMap.components || []),
-          ...componentRegistry
-        ].filter((component, index, self) => 
-          // Remove duplicates by name
-          index === self.findIndex(c => c.name === component.name)
-        ),
-        generatedAt: new Date().toISOString(),
-        version: '1.0.0'
-      };
-      
-      // Add elements found during runtime if they exist in window
-      if (global.__AI_AGENT_RUNTIME_ELEMENTS__) {
-        componentMap.runtimeElements = global.__AI_AGENT_RUNTIME_ELEMENTS__;
-      }
-      
-      // Write the component map to the output path
-      const outputDir = path.dirname(this.outputPath);
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-      
-      fs.writeFileSync(this.outputPath, JSON.stringify(componentMap, null, 2));
-      console.log(`[AI Optimizer] Generated component map at ${this.outputPath} with ${componentMap.components.length} components`);
-    });
+      });
+    }
   }
 }
 
 module.exports = {
-  withAIOptimizer,
-  AIComponentMapPlugin
+  withAIOptimizer
 };

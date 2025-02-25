@@ -3,19 +3,18 @@ import React from 'react';
 
 export interface AIAgentProviderProps {
   children: React.ReactNode;
-  forceOptimization?: boolean;
+  disableOptimization?: boolean;
 }
 
 export function AIAgentProvider(props: AIAgentProviderProps): JSX.Element;
 
 export function useAIAgentInteraction(): {
-  componentMap: any;
   interactiveElements: any[];
-  isLoadingMap: boolean;
   error: string | null;
   findElementByTarget: (targetValue: string) => HTMLElement | null;
   findElementsByComponent: (componentName: string) => HTMLElement[];
   findElementsByAction: (actionType: string) => HTMLElement[];
+  findElementsByDescription: (descriptionText: string) => HTMLElement[];
   clickElement: (targetOrElement: string | HTMLElement) => boolean;
   fillInput: (targetOrElement: string | HTMLElement, value: string) => boolean;
   selectOption: (targetOrElement: string | HTMLElement, value: string) => boolean;

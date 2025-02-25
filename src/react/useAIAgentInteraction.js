@@ -1,39 +1,19 @@
 // useAIAgentInteraction.js
 import { useState, useEffect } from 'react';
+import React from 'react';
 
 /**
  * Hook for AI agents to interact with enhanced components
  * Provides structured access to component information and interactions
  */
 export function useAIAgentInteraction() {
-  const [componentMap, setComponentMap] = useState(null);
   const [interactiveElements, setInteractiveElements] = useState([]);
-  const [isLoadingMap, setIsLoadingMap] = useState(true);
   const [error, setError] = useState(null);
   
-  // Load component map on initialization
+  // Load interactive elements on initialization
   useEffect(() => {
-    async function loadComponentMap() {
-      try {
-        setIsLoadingMap(true);
-        const response = await fetch('/ai-component-map.json');
-        if (!response.ok) {
-          throw new Error(`Failed to fetch component map: ${response.status}`);
-        }
-        const map = await response.json();
-        setComponentMap(map);
-        
-        // Now scan the page for all interactive elements
-        scanInteractiveElements();
-      } catch (err) {
-        setError(err.message);
-        console.error('Error loading component map:', err);
-      } finally {
-        setIsLoadingMap(false);
-      }
-    }
-    
-    loadComponentMap();
+    // Scan the page for all interactive elements
+    scanInteractiveElements();
     
     // When we're in a SPA (Single Page Application), we'll want to rescan
     // after navigation or major DOM changes
@@ -74,20 +54,26 @@ export function useAIAgentInteraction() {
   
   // Scan the page for interactive elements
   const scanInteractiveElements = () => {
-    const elements = document.querySelectorAll('[data-ai-action]');
-    const elementInfos = Array.from(elements).map(element => ({
-      element,
-      aiTarget: element.getAttribute('data-ai-target'),
-      aiAction: element.getAttribute('data-ai-action'),
-      component: element.closest('[data-ai-component]')?.getAttribute('data-ai-component'),
-      tagName: element.tagName.toLowerCase(),
-      text: element.textContent?.trim(),
-      inputType: element.getAttribute('data-ai-input-type'),
-      isVisible: isElementVisible(element),
-      isInteractable: !element.disabled && getComputedStyle(element).pointerEvents !== 'none'
-    }));
-    
-    setInteractiveElements(elementInfos);
+    try {
+      const elements = document.querySelectorAll('[data-ai-action]');
+      const elementInfos = Array.from(elements).map(element => ({
+        element,
+        aiTarget: element.getAttribute('data-ai-target'),
+        aiAction: element.getAttribute('data-ai-action'),
+        aiDescription: element.getAttribute('data-ai-description'),
+        component: element.closest('[data-ai-component]')?.getAttribute('data-ai-component'),
+        tagName: element.tagName.toLowerCase(),
+        text: element.textContent?.trim(),
+        inputType: element.getAttribute('data-ai-input-type'),
+        isVisible: isElementVisible(element),
+        isInteractable: !element.disabled && getComputedStyle(element).pointerEvents !== 'none'
+      }));
+      
+      setInteractiveElements(elementInfos);
+    } catch (err) {
+      setError(err.message);
+      console.error('Error scanning interactive elements:', err);
+    }
   };
   
   // Find an element by its AI target
@@ -106,6 +92,11 @@ export function useAIAgentInteraction() {
   // Find all elements of a specific interaction type
   const findElementsByAction = (actionType) => {
     return Array.from(document.querySelectorAll(`[data-ai-action="${actionType}"]`));
+  };
+  
+  // Find elements by description text
+  const findElementsByDescription = (descriptionText) => {
+    return Array.from(document.querySelectorAll(`[data-ai-description*="${descriptionText}"]`));
   };
   
   // Perform a click interaction
@@ -200,7 +191,7 @@ export function useAIAgentInteraction() {
     
     return success;
   };
-  
+
   // Submit a form
   const submitForm = (formSelector) => {
     const form = document.querySelector(formSelector);
@@ -220,18 +211,17 @@ export function useAIAgentInteraction() {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     return true;
   };
-  
+
   return {
     // State
-    componentMap,
     interactiveElements,
-    isLoadingMap,
     error,
     
     // Element finders
     findElementByTarget,
     findElementsByComponent,
     findElementsByAction,
+    findElementsByDescription,
     
     // Interactions
     clickElement,
@@ -271,7 +261,6 @@ function isElementInteractable(element) {
 export function AIAgentDebugger() {
   const {
     interactiveElements,
-    isLoadingMap,
     error
   } = useAIAgentInteraction();
   
@@ -291,24 +280,6 @@ export function AIAgentDebugger() {
       }}>
         <h3>AI Agent Error</h3>
         <p>{error}</p>
-      </div>
-    );
-  }
-  
-  if (isLoadingMap) {
-    return (
-      <div style={{ 
-        position: 'fixed', 
-        bottom: '10px', 
-        right: '10px',
-        background: '#2196f3',
-        color: 'white',
-        padding: '8px 16px',
-        borderRadius: '4px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        zIndex: 9999
-      }}>
-        Loading AI component map...
       </div>
     );
   }

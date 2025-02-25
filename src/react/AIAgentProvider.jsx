@@ -3,82 +3,36 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 
 // Create a context for AI agent information
 const AIAgentContext = createContext({
-  isAIAgent: false,
-  componentMap: null,
-  registerComponent: () => {},
+  isAIAgent: true, // Default to true
+  elementRegistry: {},
   findTargetElement: () => null,
-  elementRegistry: {}
 });
 
 /**
- * Provider component that sets up AI agent detection and helpers
+ * Provider component that sets up AI agent optimization
+ * AI optimization is enabled by default
  */
-export function AIAgentProvider({ children, forceOptimization = false }) {
-  const [isAIAgent, setIsAIAgent] = useState(true);
-  const [componentMap, setComponentMap] = useState(null);
-  const [registeredComponents, setRegisteredComponents] = useState({});
+export function AIAgentProvider({ children, disableOptimization = false }) {
+  const [isAIAgent, setIsAIAgent] = useState(true); // Default to true
   const [elementRegistry, setElementRegistry] = useState({});
   const isCapturing = useRef(false);
   const previousUrl = useRef('');
   
-  // Detect if the current user is likely an AI agent
+  // Check if AI optimization should be disabled explicitly
   useEffect(() => {
-    const detectAIAgent = () => {
-      // Simple detection based on common AI agent identifiers
-      const userAgent = navigator.userAgent.toLowerCase();
-      const aiSignifiers = [
-        'bot', 'crawler', 'spider', 'headless', 'selenium', 'puppeteer',
-        'playwright', 'cypress', 'automation', 'lighthouse', 'axe'
-      ];
-      
-      const isLikelyAI = aiSignifiers.some(term => userAgent.includes(term));
-      
-      // Also check for AI-specific URL parameter
+    const checkOptOut = () => {
+      // Check for explicit opt-out URL parameter
       const urlParams = new URLSearchParams(window.location.search);
-      const isAIParam = urlParams.get('ai-agent') === 'true' || isAIAgent;
+      const optOut = urlParams.get('ai-agent') === 'false';
       
-      setIsAIAgent(isLikelyAI || isAIParam || forceOptimization);
-      
-      // If this appears to be an AI agent, load the component map
-      if (isLikelyAI || isAIParam || forceOptimization) {
-        loadComponentMap();
+      // Set isAIAgent to false only if disabled by prop or explicit opt-out
+      if (disableOptimization || optOut) {
+        setIsAIAgent(false);
       }
     };
     
-    const loadComponentMap = async () => {
-      try {
-        const response = await fetch('/ai-component-map.json');
-        if (response.ok) {
-          const map = await response.json();
-          setComponentMap(map);
-        } else {
-          // If no map exists yet, create an initial one
-          const initialMap = {
-            components: [],
-            runtimeElements: [],
-            generatedAt: new Date().toISOString(),
-            version: '1.0.0'
-          };
-          setComponentMap(initialMap);
-          
-          // Try to save the initial map
-          await updateComponentMapOnServer(initialMap);
-        }
-      } catch (error) {
-        console.warn('Failed to load AI component map, creating new one');
-        // Create an initial component map
-        const initialMap = {
-          components: [],
-          runtimeElements: [],
-          generatedAt: new Date().toISOString(),
-          version: '1.0.0'
-        };
-        setComponentMap(initialMap);
-      }
-    };
-    
-    detectAIAgent();
-  }, [forceOptimization]);
+    checkOptOut();
+  }, [disableOptimization]);
 
   // Function to capture all interactive elements on the page
   const captureInteractiveElements = () => {
@@ -102,7 +56,6 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
     
     const elements = document.querySelectorAll(interactiveSelectors.join(','));
     const newRegistry = {};
-    const capturedElements = [];
     
     elements.forEach(element => {
       // Skip hidden or non-interactive elements
@@ -138,14 +91,6 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
         right: rect.right
       };
       
-      // Calculate absolute position within the document
-      const absolutePosition = {
-        top: rect.top + window.scrollY,
-        left: rect.left + window.scrollX,
-        width: rect.width,
-        height: rect.height
-      };
-      
       // Collect key attributes
       const attributes = {};
       for (const attr of element.attributes) {
@@ -173,20 +118,18 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
         path,
         content,
         viewportPosition,
-        absolutePosition,
         attributes,
         timestamp: Date.now()
       };
       
       newRegistry[aiTarget] = elementInfo;
-      capturedElements.push(elementInfo);
     });
     
     // Update the registry
     setElementRegistry(newRegistry);
     isCapturing.current = false;
     
-    return capturedElements;
+    return Object.values(newRegistry);
   };
   
   // Compute a CSS selector path for an element
@@ -276,55 +219,6 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
     }
   }
   
-  // Update the component map on the server
-  const updateComponentMapOnServer = async (data = null) => {
-    try {
-      const elements = data?.runtimeElements || captureInteractiveElements();
-      
-      const updatedMap = {
-        ...componentMap,
-        runtimeElements: elements,
-        generatedAt: new Date().toISOString()
-      };
-      
-      // Use the new App Router API route
-      const response = await fetch('/api/ai-component-map/update', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updatedMap)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to update component map: ${response.status}`);
-      }
-      
-      // Update the local component map state
-      setComponentMap(updatedMap);
-      return true;
-    } catch (error) {
-      console.error('Error updating component map:', error);
-      return false;
-    }
-  };
-  
-  // Register a component instance
-  const registerComponent = (componentName, elementRef) => {
-    if (!elementRef.current) return;
-    
-    setRegisteredComponents(prev => ({
-      ...prev,
-      [componentName]: elementRef
-    }));
-    
-    // Add AI attributes to the component element
-    if (elementRef.current) {
-      elementRef.current.setAttribute('data-ai-component', componentName);
-      elementRef.current.setAttribute('data-ai-target', `component-${componentName}`);
-    }
-  };
-  
   // Function to find an element by its AI target
   const findTargetElement = (targetValue) => {
     return document.querySelector(`[data-ai-target="${targetValue}"]`);
@@ -334,11 +228,8 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
   useEffect(() => {
     if (!isAIAgent) return;
     
-    // Initial capture
-    const initialCapture = setTimeout(() => {
-      captureInteractiveElements();
-      updateComponentMapOnServer();
-    }, 1000); // Delay to ensure page is fully rendered
+    // Initial capture - do immediately since we're always optimizing
+    captureInteractiveElements();
     
     // Function to handle URL changes (for SPA navigation)
     const handleUrlChange = () => {
@@ -349,8 +240,7 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
         // Wait for the new page to render
         setTimeout(() => {
           captureInteractiveElements();
-          updateComponentMapOnServer();
-        }, 1000);
+        }, 500); // Reduced delay since we're always optimizing
       }
     };
     
@@ -384,7 +274,7 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
             if (
               node.matches && (
                 node.matches(interactiveSelectors.join(',')) || 
-                node.querySelector(interactiveSelectors.join(','))
+                node.querySelector && node.querySelector(interactiveSelectors.join(','))
               )
             ) {
               shouldUpdate = true;
@@ -407,13 +297,12 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
       
       if (shouldUpdate) {
         // Debounce updates to avoid excessive processing
-        if (window.aiMapUpdateTimeout) {
-          clearTimeout(window.aiMapUpdateTimeout);
+        if (window.aiUpdateTimeout) {
+          clearTimeout(window.aiUpdateTimeout);
         }
         
-        window.aiMapUpdateTimeout = setTimeout(() => {
+        window.aiUpdateTimeout = setTimeout(() => {
           captureInteractiveElements();
-          updateComponentMapOnServer();
         }, 500);
       }
     });
@@ -444,14 +333,12 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
     // Set up periodic refresh just in case
     const refreshInterval = setInterval(() => {
       captureInteractiveElements();
-      updateComponentMapOnServer();
     }, 30000); // Every 30 seconds
     
     return () => {
       clearInterval(refreshInterval);
-      clearTimeout(initialCapture);
-      if (window.aiMapUpdateTimeout) {
-        clearTimeout(window.aiMapUpdateTimeout);
+      if (window.aiUpdateTimeout) {
+        clearTimeout(window.aiUpdateTimeout);
       }
       
       observer.disconnect();
@@ -461,18 +348,15 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
       history.pushState = originalPushState;
       history.replaceState = originalReplaceState;
     };
-  }, [isAIAgent, componentMap]);
+  }, [isAIAgent]);
   
   // Add global helper for AI agents if in browser
   useEffect(() => {
     if (typeof window !== 'undefined' && isAIAgent) {
       window.__AI_AGENT_HELPERS__ = {
         findElement: findTargetElement,
-        getComponentMap: () => componentMap,
-        getRegisteredComponents: () => registeredComponents,
-        getInteractiveElements: () => elementRegistry,
+        getInteractiveElements: () => Object.values(elementRegistry),
         captureElements: captureInteractiveElements,
-        updateComponentMap: updateComponentMapOnServer,
         describeElement: (element) => {
           if (!element) return null;
           
@@ -497,36 +381,43 @@ export function AIAgentProvider({ children, forceOptimization = false }) {
             interactable: isElementInteractable(element),
             path: computeElementPath(element)
           };
+        },
+        // Helper methods for AI agents
+        clickElement: (targetOrSelector) => {
+          let element = typeof targetOrSelector === 'string'
+            ? document.querySelector(`[data-ai-target="${targetOrSelector}"]`) || document.querySelector(targetOrSelector)
+            : targetOrSelector;
+            
+          if (element && isElementInteractable(element)) {
+            element.click();
+            return true;
+          }
+          return false;
+        },
+        fillInput: (targetOrSelector, value) => {
+          let element = typeof targetOrSelector === 'string'
+            ? document.querySelector(`[data-ai-target="${targetOrSelector}"]`) || document.querySelector(targetOrSelector)
+            : targetOrSelector;
+            
+          if (element && isElementInteractable(element)) {
+            element.value = value;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+          }
+          return false;
         }
       };
     }
-    
-    // Add a way for AI agents to signal they're ready
-    if (typeof window !== 'undefined') {
-      window.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'AI_AGENT_READY') {
-          setIsAIAgent(true);
-          
-          // Capture elements after the agent signals it's ready
-          setTimeout(() => {
-            captureInteractiveElements();
-            updateComponentMapOnServer();
-          }, 500);
-        }
-      });
-    }
-  }, [isAIAgent, componentMap, registeredComponents, elementRegistry]);
+  }, [isAIAgent, elementRegistry]);
   
   return (
     <AIAgentContext.Provider 
       value={{
         isAIAgent,
-        componentMap,
         elementRegistry,
-        registerComponent,
         findTargetElement,
-        captureElements: captureInteractiveElements,
-        updateComponentMap: updateComponentMapOnServer
+        captureElements: captureInteractiveElements
       }}
     >
       {children}
@@ -545,28 +436,59 @@ function AIAgentHelperScript() {
             // Signal that the AI helper is ready
             window.AI_HELPER_READY = true;
             
-            // Add global event to manually trigger a component map update
-            window.updateAIComponentMap = function() {
-              if (window.__AI_AGENT_HELPERS__) {
-                return window.__AI_AGENT_HELPERS__.updateComponentMap();
-              }
-              return false;
+            // Update page metadata for AI agents
+            const metadata = {
+              url: window.location.href,
+              title: document.title,
+              description: document.querySelector('meta[name="description"]')?.getAttribute('content') || '',
+              interactiveElements: Array.from(document.querySelectorAll('[data-ai-action]')).length
             };
             
-            // Automatically update when the page becomes fully interactive
-            if (document.readyState === 'complete') {
-              setTimeout(function() {
-                window.updateAIComponentMap && window.updateAIComponentMap();
-              }, 1000);
+            // Add metadata to document head
+            const metadataScript = document.createElement('script');
+            metadataScript.type = 'application/json';
+            metadataScript.id = 'ai-page-metadata';
+            metadataScript.textContent = JSON.stringify(metadata);
+            
+            // Check if it already exists
+            const existingMetadata = document.getElementById('ai-page-metadata');
+            if (existingMetadata) {
+              existingMetadata.textContent = JSON.stringify(metadata);
             } else {
-              window.addEventListener('load', function() {
-                setTimeout(function() {
-                  window.updateAIComponentMap && window.updateAIComponentMap();
-                }, 1000);
-              });
+              document.head.appendChild(metadataScript);
             }
             
-            console.log('[AI Optimizer] Helper initialized');
+            // Make the page self-documenting for AI agents
+            document.documentElement.setAttribute('data-ai-optimized', 'true');
+            
+            // Make helper globally accessible
+            window.AIHelper = {
+              findElement(targetOrDescription) {
+                // Find by exact target
+                let element = document.querySelector(\`[data-ai-target="\${targetOrDescription}"]\`);
+                
+                // If not found, try matching description
+                if (!element) {
+                  element = document.querySelector(\`[data-ai-description*="\${targetOrDescription}"]\`);
+                }
+                
+                return element;
+              },
+              
+              getInteractiveElements() {
+                return Array.from(document.querySelectorAll('[data-ai-action]')).map(el => ({
+                  target: el.getAttribute('data-ai-target'),
+                  action: el.getAttribute('data-ai-action'),
+                  description: el.getAttribute('data-ai-description'),
+                  text: el.textContent?.trim(),
+                  tagName: el.tagName.toLowerCase(),
+                  visible: window.__AI_AGENT_HELPERS__?.describeElement(el).visible || false,
+                  interactable: !el.disabled
+                }));
+              }
+            };
+            
+            console.log('[AI Optimizer] Helper initialized (default enabled)');
           })();
         `
       }}
@@ -621,7 +543,7 @@ function isElementVisible(element) {
     return false;
   }
   
-  // Check if element is outside the viewport (not visible without scrolling)
+  // Basic check if element is in viewport
   if (
     rect.bottom < 0 || 
     rect.top > window.innerHeight || 
@@ -631,18 +553,7 @@ function isElementVisible(element) {
     return false;
   }
   
-  // Check if the element is covered by another element
-  const center = {
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2
-  };
-  
-  const elementAtPoint = document.elementFromPoint(center.x, center.y);
-  
-  if (!elementAtPoint) return false;
-  
-  // Check if this element or one of its children is at this point
-  return element === elementAtPoint || element.contains(elementAtPoint);
+  return true;
 }
 
 // Check if an element is interactable
@@ -662,7 +573,7 @@ function isElementInteractable(element) {
 
 // Export a component that adds AI assistance to existing pages
 export function AIAgentAssistant() {
-  const { isAIAgent, captureElements, updateComponentMap } = useAIAgent();
+  const { isAIAgent, captureElements } = useAIAgent();
   
   if (!isAIAgent) return null;
   
@@ -683,11 +594,10 @@ export function AIAgentAssistant() {
         gap: '4px'
       }}
     >
-      <div>AI Agent Assistance Active</div>
+      <div>AI Agent Assistance Active (Default Enabled)</div>
       <button 
         onClick={() => {
           captureElements();
-          updateComponentMap();
         }}
         style={{
           background: '#4CAF50',
@@ -699,7 +609,7 @@ export function AIAgentAssistant() {
           fontSize: '10px'
         }}
       >
-        Update Component Map
+        Scan Elements
       </button>
     </div>
   );

@@ -78,15 +78,6 @@ export function withAIEnhancement(Component, options = {}) {
             }
           });
         }
-        
-        // Add to global registry if available
-        if (typeof window !== 'undefined' && window.__AI_COMPONENT_REGISTRY__) {
-          window.__AI_COMPONENT_REGISTRY__.push({
-            name: componentName,
-            element: internalRef.current,
-            options
-          });
-        }
       }
     }, []);
     
