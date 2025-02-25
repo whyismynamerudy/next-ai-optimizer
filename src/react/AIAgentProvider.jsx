@@ -76,6 +76,44 @@ export function AIAgentProvider({ children }) {
   const findTargetElement = (targetValue) => {
     return document.querySelector(`[data-ai-target="${targetValue}"]`);
   };
+
+  const captureRuntimeElements = () => {
+    const elements = Array.from(document.querySelectorAll('[data-ai-action]'));
+    const elementInfos = elements.map(element => ({
+      aiTarget: element.getAttribute('data-ai-target'),
+      aiAction: element.getAttribute('data-ai-action'),
+      aiComponent: element.closest('[data-ai-component]')?.getAttribute('data-ai-component'),
+      tagName: element.tagName.toLowerCase(),
+      text: element.textContent?.trim(),
+      id: element.id,
+      type: element.getAttribute('type') || undefined
+    }));
+    
+    // Save to global for server to access (if in a Node.js environment)
+    if (typeof global !== 'undefined') {
+      global.__AI_AGENT_RUNTIME_ELEMENTS__ = elementInfos;
+    }
+    
+    // Also add a way to update the component map file on the server
+    window.__AI_AGENT_HELPERS__.updateComponentMap = async () => {
+      try {
+        // Updated URL for App Router structure
+        await fetch('/api/ai-component-map/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ elements: elementInfos })
+        });
+        return true;
+      } catch (error) {
+        console.error('Failed to update component map:', error);
+        return false;
+      }
+    };
+    
+    return elementInfos;
+  };
   
   // Add global helper for AI agents if in browser
   useEffect(() => {
@@ -86,6 +124,7 @@ export function AIAgentProvider({ children }) {
         getRegisteredComponents: () => registeredComponents,
         getInteractiveElements: () => 
           Array.from(document.querySelectorAll('[data-ai-action]')),
+        captureRuntimeElements,
         describeElement: (element) => {
           if (!element) return null;
           return {

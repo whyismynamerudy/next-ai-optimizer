@@ -157,36 +157,76 @@ function addBabelPlugin(rule) {
 class AIComponentMapPlugin {
   constructor(options = {}) {
     this.options = options;
+    this.outputPath = path.resolve(options.outputPath || './public/ai-component-map.json');
   }
   
   apply(compiler) {
     const pluginName = 'AIComponentMapPlugin';
     
+    // Register component info during compilation
+    compiler.hooks.compilation.tap(pluginName, (compilation) => {
+      // This helps detect components in the current build
+      compilation.hooks.finishModules.tap(pluginName, (modules) => {
+        modules.forEach(module => {
+          if (module.buildInfo && module.buildInfo.aiComponents) {
+            if (!global.__NEXT_AI_COMPONENT_REGISTRY__) {
+              global.__NEXT_AI_COMPONENT_REGISTRY__ = [];
+            }
+            
+            module.buildInfo.aiComponents.forEach(component => {
+              global.__NEXT_AI_COMPONENT_REGISTRY__.push({
+                name: component.name,
+                file: module.resource || 'unknown',
+                description: component.description || '',
+                props: component.props || []
+              });
+            });
+          }
+        });
+      });
+    });
+    
+    // Generate the component map file
     compiler.hooks.done.tap(pluginName, (stats) => {
       const componentRegistry = global.__NEXT_AI_COMPONENT_REGISTRY__ || [];
       
-      if (componentRegistry.length === 0) {
-        console.warn('[AI Optimizer] No components were registered. Make sure the babel plugin is configured correctly.');
-        return;
+      // Check for existing component map and merge with new data
+      let existingMap = {};
+      try {
+        if (fs.existsSync(this.outputPath)) {
+          const existingData = fs.readFileSync(this.outputPath, 'utf8');
+          existingMap = JSON.parse(existingData);
+        }
+      } catch (err) {
+        console.warn('[AI Optimizer] Could not read existing component map:', err.message);
       }
       
+      // Create updated component map
       const componentMap = {
-        components: componentRegistry,
+        components: [
+          ...(existingMap.components || []),
+          ...componentRegistry
+        ].filter((component, index, self) => 
+          // Remove duplicates by name
+          index === self.findIndex(c => c.name === component.name)
+        ),
         generatedAt: new Date().toISOString(),
         version: '1.0.0'
       };
       
-      // Write the component map to the output path
-      const outputPath = path.resolve(this.options.outputPath || './public/ai-component-map.json');
+      // Add elements found during runtime if they exist in window
+      if (global.__AI_AGENT_RUNTIME_ELEMENTS__) {
+        componentMap.runtimeElements = global.__AI_AGENT_RUNTIME_ELEMENTS__;
+      }
       
-      // Ensure directory exists
-      const outputDir = path.dirname(outputPath);
+      // Write the component map to the output path
+      const outputDir = path.dirname(this.outputPath);
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
       }
       
-      fs.writeFileSync(outputPath, JSON.stringify(componentMap, null, 2));
-      console.log(`[AI Optimizer] Generated component map at ${outputPath}`);
+      fs.writeFileSync(this.outputPath, JSON.stringify(componentMap, null, 2));
+      console.log(`[AI Optimizer] Generated component map at ${this.outputPath} with ${componentMap.components.length} components`);
     });
   }
 }

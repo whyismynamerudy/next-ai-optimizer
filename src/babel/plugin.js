@@ -7,6 +7,11 @@ const OpenAI = require('openai');
 let openai;
 let useAI = false;
 
+// Set up global component registry
+if (typeof global !== 'undefined' && !global.__NEXT_AI_COMPONENT_REGISTRY__) {
+  global.__NEXT_AI_COMPONENT_REGISTRY__ = [];
+}
+
 /**
  * Babel plugin to enhance React components for better AI agent interaction
  */
@@ -329,6 +334,7 @@ function generateShortHash() {
  * Add component to registry
  */
 function addToComponentRegistry(componentName, filename, state) {
+  // Add to file metadata (local to the babel transformation)
   if (!state.file.metadata.componentRegistry) {
     state.file.metadata.componentRegistry = [];
   }
@@ -337,6 +343,15 @@ function addToComponentRegistry(componentName, filename, state) {
     name: componentName,
     file: filename
   });
+  
+  // Also add to global registry for the webpack plugin to access
+  if (typeof global !== 'undefined' && global.__NEXT_AI_COMPONENT_REGISTRY__) {
+    global.__NEXT_AI_COMPONENT_REGISTRY__.push({
+      name: componentName,
+      file: filename,
+      exportedAt: new Date().toISOString()
+    });
+  }
 }
 
 /**
