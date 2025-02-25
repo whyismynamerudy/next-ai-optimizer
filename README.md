@@ -154,6 +154,89 @@ if (helpers) {
 }
 ```
 
+## Troubleshooting
+
+### TypeScript Type Errors
+
+#### Module Not Found
+
+If you see the error `Cannot find module 'next-ai-optimizer/react' or its corresponding type declarations`:
+
+1. Make sure your TypeScript configuration has the right module resolution:
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "moduleResolution": "node16",
+    // or
+    "moduleResolution": "bundler"
+  }
+}
+```
+
+2. If the error persists, create type declarations in your project:
+
+```typescript
+// src/@types/next-ai-optimizer/index.d.ts
+declare module 'next-ai-optimizer/react' {
+  import React from 'react';
+  export function AIAgentProvider(props: { children: any }): JSX.Element;
+  // Add other exports as needed
+}
+```
+
+#### ReactNode Type Mismatch
+
+If you see an error like `Type 'React.ReactNode' is not assignable to type 'import("...").ReactNode'`:
+
+Use a type assertion to resolve React version incompatibilities:
+
+```jsx
+<AIAgentProvider>
+  {children as any}
+</AIAgentProvider>
+```
+
+### Missing Component Map
+
+If you see a 404 error when loading `/ai-component-map.json`:
+
+1. Make sure your Next.js configuration is correctly set up with the AI optimizer
+2. Run a production build with `npm run build` to generate the component map
+3. If the issue persists, manually create a basic component map:
+
+```json
+// public/ai-component-map.json
+{
+  "components": [],
+  "generatedAt": "2025-02-24T12:00:00.000Z",
+  "version": "1.0.0"
+}
+```
+
+### Babel Plugin Not Working
+
+If you see `[AI Optimizer] No components were registered. Make sure the babel plugin is configured correctly`:
+
+1. Ensure your Next.js configuration correctly applies the AI optimizer
+2. Set the `OPTIMIZE_FOR_AI=true` environment variable
+3. Try rebuilding the project with a production build (`npm run build`)
+
+### Enabling AI Agent Detection
+
+To ensure AI agent detection works properly:
+
+1. Add the `?ai-agent=true` URL parameter to explicitly identify as an AI agent
+2. Alternatively, modify the `AIAgentProvider` to always treat users as AI agents:
+
+```jsx
+// In your layout file
+<AIAgentProvider forceOptimization={true}>
+  {children as any}
+</AIAgentProvider>
+```
+
 ## How It Works
 
 ### Build-time Optimization

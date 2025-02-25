@@ -13,7 +13,7 @@ const AIAgentContext = createContext({
  * Provider component that sets up AI agent detection and helpers
  */
 export function AIAgentProvider({ children }) {
-  const [isAIAgent, setIsAIAgent] = useState(false);
+  const [isAIAgent, setIsAIAgent] = useState(true);
   const [componentMap, setComponentMap] = useState(null);
   const [registeredComponents, setRegisteredComponents] = useState({});
   
