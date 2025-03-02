@@ -112,29 +112,170 @@ If you're using TypeScript and encounter module resolution issues, update your `
 }
 ```
 
-### 4. (Optional) Enhance Individual Components
+### 4. Enhance Individual Components
 
-While the system automatically enhances all components during build, you can also manually enhance components for more granular control:
+While the system automatically enhances all components during build, you can also manually enhance components for more granular control using `withAIEnhancement`.
+
+#### Simple Components
+
+For simple DOM-based components:
 
 ```javascript
 import { withAIEnhancement } from 'next-ai-optimizer/react';
 
-function MyComponent() {
-  // Your component implementation
+function SimpleButton({ onClick, children }) {
+  return <button onClick={onClick}>{children}</button>;
 }
 
-export default withAIEnhancement(MyComponent, {
-  name: 'MyComponent',
-  description: 'A component that does something specific',
+export default withAIEnhancement(SimpleButton, {
+  name: 'SimpleButton',
+  description: 'A button component that performs an action when clicked',
   interactionPoints: [
     {
-      element: 'button.primary',
+      element: 'button',
       type: 'click',
-      description: 'Submit the form'
+      description: 'Click to perform the action'
     }
   ]
 });
 ```
+
+#### Complex Components with TypeScript
+
+For complex components with TypeScript, especially those using refs:
+
+```tsx
+import { withAIEnhancement } from 'next-ai-optimizer/react';
+import { useRef, useState } from 'react';
+
+interface CardProps {
+  title: string;
+  description: string;
+  imageUrl: string;
+  onClick: () => void;
+  aiMetadata?: any; // Important: include this to accept AI enhancement props
+}
+
+// Component that receives AI metadata
+function Card({
+  title,
+  description,
+  imageUrl,
+  onClick,
+  aiMetadata, // Accept the AI metadata props
+}: CardProps) {
+  const [expanded, setExpanded] = useState(false);
+  
+  return (
+    // Apply the ref to the root element
+    <div ref={aiMetadata?.ref} className="card">
+      <img 
+        src={imageUrl} 
+        alt={title} 
+        id={`card-image-${title.toLowerCase().replace(/\s+/g, '-')}`}
+        onClick={onClick} 
+      />
+      <h3>{title}</h3>
+      <p>{description}</p>
+      <button 
+        id={`expand-button-${title.toLowerCase().replace(/\s+/g, '-')}`}
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? 'Show less' : 'Show more'}
+      </button>
+      {expanded && (
+        <div className="expanded-content">
+          Additional content here...
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Apply withAIEnhancement with appropriate selectors
+export default withAIEnhancement(Card, {
+  name: 'Card',
+  description: 'A card component that displays information with expandable content',
+  interactionPoints: [
+    {
+      element: 'img[id^="card-image"]',
+      type: 'click',
+      description: 'Click on the image to view details'
+    },
+    {
+      element: 'button[id^="expand-button"]',
+      type: 'click',
+      description: 'Toggle expanded content visibility'
+    }
+  ]
+});
+```
+
+#### Components with Forwarded Refs
+
+If your component already uses `forwardRef`, integrate with `withAIEnhancement` like this:
+
+```tsx
+import React, { forwardRef } from 'react';
+import { withAIEnhancement } from 'next-ai-optimizer/react';
+
+interface InputProps {
+  label: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  aiMetadata?: any;
+}
+
+const FormInput = forwardRef<HTMLInputElement, InputProps>(({
+  label,
+  value,
+  onChange,
+  aiMetadata, // Accept AI metadata
+}, ref) => {
+  // Create a wrapper div that receives the AI metadata ref
+  return (
+    <div ref={aiMetadata?.ref} className="form-field">
+      <label>{label}</label>
+      <input
+        ref={ref} // Pass the original ref to the input
+        type="text"
+        value={value}
+        onChange={onChange}
+        id={`input-${label.toLowerCase().replace(/\s+/g, '-')}`}
+      />
+    </div>
+  );
+});
+
+FormInput.displayName = 'FormInput'; // Important for React DevTools
+
+export default withAIEnhancement(FormInput, {
+  name: 'FormInput',
+  description: 'A form input field with a label',
+  interactionPoints: [
+    {
+      element: 'input[id^="input-"]',
+      type: 'input',
+      inputType: 'text',
+      description: 'Enter text in this field'
+    }
+  ]
+});
+```
+
+### Best Practices for Using withAIEnhancement
+
+1. **Add Unique IDs**: Add predictable, unique IDs to your interactive elements to make them easier to select
+   
+2. **Handle the `aiMetadata` Prop**: For React components, make sure to accept and use the `aiMetadata` prop, applying its `ref` to your root element
+
+3. **Use Specific Selectors**: Use specific CSS selectors in your `interactionPoints` configuration to ensure the correct elements are targeted
+
+4. **Prefer ID-Based Selectors**: When possible, use ID-based selectors (e.g., `[id^="button-"]`) for more reliable element selection
+
+5. **Describe Actions Clearly**: Use clear, descriptive text in your `description` fields to help AI agents understand each interaction
+
+6. **Mark Flow Completion**: Use the `completes: true` property for interactions that complete a flow or process
 
 ## Configuration Options
 
@@ -205,6 +346,36 @@ if (window.__AI_AGENT_HELPERS__) {
 }
 ```
 
+## Understanding the Generated Metadata
+
+When a component is enhanced with `withAIEnhancement`, it generates HTML with metadata attributes:
+
+```html
+<!-- Component-level metadata -->
+<div 
+  data-ai-component="ComponentName" 
+  data-ai-target="component-ComponentName" 
+  data-ai-description="Component description" 
+  data-ai-interaction-points="[...]">
+
+  <!-- Interactive elements with their own metadata -->
+  <button 
+    data-ai-action="click" 
+    data-ai-description="Button description"
+    data-ai-target="ComponentName-click-abc123">
+    Click Me
+  </button>
+  
+  <input 
+    data-ai-action="input" 
+    data-ai-input-type="text"
+    data-ai-description="Input description"
+    data-ai-target="ComponentName-input-def456">
+</div>
+```
+
+This metadata makes your components self-documenting for AI agents.
+
 ## Troubleshooting
 
 ### TypeScript Type Errors
@@ -251,6 +422,15 @@ Use a type assertion to resolve React version incompatibilities:
   {children as any}
 </AIAgentProvider>
 ```
+
+#### Issues with withAIEnhancement
+
+If your enhanced components don't show AI metadata:
+
+1. Make sure you're accepting and using the `aiMetadata` prop
+2. Apply the `ref` from `aiMetadata` to your root element
+3. Use ID-based selectors for more reliable element targeting
+4. Check the console for any warnings from the AI optimizer
 
 ## How It Works
 
